@@ -1,0 +1,844 @@
+---
+title: "Common Data Set 2020-2021"
+author: "California State University, East Bay"
+date: "generated on `r format(Sys.time(), '%Y-%m-%d')`"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+header-includes:
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyhf{}
+- \chead{Common Data Set 2020-2021}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r include=FALSE}
+# Install and load packages
+
+if(!require(tidyverse)) install.packages("tidyverse",repos = "http://cran.us.r-project.org")
+
+library(tidyverse)
+library(knitr)
+
+rm(list = ls())
+
+# Create a reference for the directory where the ERS submission files are stored.
+
+ERSdir <- file.path("K:\\My Drive\\AAprojects\\CDSusingR\\2020-2021\\ERS\\")
+
+# Two digit campus code.  East Bay's is 05.
+
+cc <- "05"
+
+# Save the following two files for CIP codes in Section J, 
+#    commonc-cosarcipcodefxvw-prd-1.csv and
+#    CIPCategory20-21.csv
+# and create a reference for the directory.
+
+CIPdir <- file.path("K:\\My Drive\\AAprojects\\CDSusingR")
+
+```
+
+
+```{r include=FALSE}
+
+# Read in fall ERS state and self files for the enrollment sections, B1 and B2. The data are also used to find 2019 freshmen retention in section B22 and freshman profile, C9-C12. 
+
+ERSS <- read.fwf(file.path(ERSdir, paste0("ERSS\\ERS.PROD.T20204",cc)), 
+                 width = c(-24,1,-1,1,-13,6,-7,1,
+                           1,1,-10,1,-39,2,
+                           -3,3,3,3,3,
+                           -3,2,2,-4,2,-76,1,
+                           3,-13,1,-14,9,-22,3,
+                           3,4,-24,2),
+                 col.names=c('SexCode','CitizenshipCode','InstitutionOfOrigin','EnrollmentStatus',
+                             'StudentLevelCode','DegreeObjectiveCode','StudentStandingCode','ACTWritingScore',
+                             'LDunits','UDunits','GradUnits','HighSchoolGPA',
+                             'ACTEnglishScore','ACTMathScore','ACTCompositeScore','MatriculationType',
+                             'PreUnits','IPEDSEthnicity','EmployeeID', 'SATReadWriteScore',
+                             'SATMathScore','SATCompositeScore','GenderIdentityCode'),
+                 colClasses=c('character','character','character','numeric',
+                              'numeric','numeric','character','numeric',
+                              'numeric','numeric','numeric','numeric',
+                              'numeric','numeric','numeric','character',
+                              'numeric','numeric','character','numeric',
+                              'numeric','numeric','numeric'))
+
+
+sERS <- read.fwf(file.path(ERSdir, paste0("sERSS\\SER.PROD.T20204",cc)), 
+                 width = c(-24,1,-1,1,-13,6,-7,1,
+                           1,1,-10,1,-39,2,
+                           -3,3,3,3,3,
+                           -3,2,2,-4,2,-76,1,
+                           -16,1,-5,9,-17,3,-9,3,
+                           3,4,-24,2),
+                 col.names=c('SexCode','CitizenshipCode','InstitutionOfOrigin','EnrollmentStatus',
+                             'StudentLevelCode','DegreeObjectiveCode','StudentStandingCode','ACTWritingScore',
+                             'LDunits','UDunits','GradUnits','HighSchoolGPA',
+                             'ACTEnglishScore','ACTMathScore','ACTCompositeScore','MatriculationType',
+                             'IPEDSEthnicity','EmployeeID','PreUnits', 'SATReadWriteScore',
+                             'SATMathScore','SATCompositeScore','GenderIdentityCode'),
+                 colClasses=c('character','character','character','numeric',
+                              'numeric','numeric','character','numeric',
+                              'numeric','numeric','numeric','numeric',
+                              'numeric','numeric','numeric','character',
+                              'numeric','character','numeric','numeric',
+                              'numeric','numeric','numeric'))
+ERS_Enr <- dplyr::bind_rows("R" = ERSS, "E" = sERS, .id = "FileType")
+rm(ERSS,sERS)
+
+# Read in degree data for total degrees conferred, B3, and by CIP codes, J.
+
+ERSDsummer <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20203",cc)), 
+                 width = c(-53,1,5),
+                 col.names=c('DegreeLevelCode','MajorCode'),
+                 colClasses=c('numeric','character'))
+ERSDfall_spring <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20212",cc)), 
+                     width = c(-53,1,5),
+                     col.names=c('DegreeLevelCode','MajorCode'),
+                     colClasses=c('numeric','character'))
+ERSD <- rbind(ERSDsummer,ERSDfall_spring)
+rm(ERSDsummer, ERSDfall_spring)
+
+
+
+# Read 2014 enrollment data to define cohort for graduation rates in section B4.
+# Chancellor's Office did not include self-support students for GI2025 2014 cohort, so I use the state side only.
+
+ERSS_Coh <- read.fwf(file.path(ERSdir, paste0("ERSS\\ERS.PROD.T20144",cc)), 
+                 width = c(-53,1,1,1,-10,1,-44,3,3,3,-93,3,-28,9),
+                 col.names=c('EnrollmentStatus','StudentLevelCode','DegreeObjectiveCode','StudentStandingCode',
+                             'LDunits','UDunits','GradUnits','PreUnits','EmployeeID'),
+                 colClasses=c('numeric','numeric','numeric','character',
+                              'numeric','numeric','numeric','numeric','character'))
+ERSS_Coh <- mutate(ERSS_Coh, TotalUnits = (PreUnits+LDunits+UDunits+GradUnits)/10)
+
+# Select first time full time undergraduate students from the cohort data.
+FTFT_Coh <- subset(ERSS_Coh,EnrollmentStatus==5 & StudentLevelCode < 5 & TotalUnits >= 12, select = EmployeeID)
+rm(ERSS_Coh)
+
+# For 4,5,6 year graduation records, read in fall 2014 through summer 2020 data.
+
+ERSD2152 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20152",cc)), 
+                 width = c(-9,5,-39,1,-50,9),
+                 col.names=c('YearTerm','DegreeLevelCode','EmployeeID'),
+                 colClasses=c('numeric','character','character'))
+ERSD2153 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20153",cc)), 
+                 width = c(-9,5,-39,1,-50,9),
+                 col.names=c('YearTerm','DegreeLevelCode','EmployeeID'),
+                 colClasses=c('numeric','character','character'))
+ERSD2162 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20162",cc)), 
+                 width = c(-9,5,-39,1,-50,9),
+                 col.names=c('YearTerm','DegreeLevelCode','EmployeeID'),
+                 colClasses=c('numeric','character','character'))
+ERSD2163 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20163",cc)), 
+                 width = c(-9,5,-39,1,-50,9),
+                 col.names=c('YearTerm','DegreeLevelCode','EmployeeID'),
+                 colClasses=c('numeric','character','character'))
+ERSD2172 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20172",cc)), 
+                 width = c(-9,5,-39,1,-50,9),
+                 col.names=c('YearTerm','DegreeLevelCode','EmployeeID'),
+                 colClasses=c('numeric','character','character'))
+ERSD2173 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20173",cc)), 
+                 width = c(-9,5,-39,1,-50,9),
+                 col.names=c('YearTerm','DegreeLevelCode','EmployeeID'),
+                 colClasses=c('numeric','character','character'))
+ERSD2182 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20182",cc)), 
+                 width = c(-9,5,-39,1,-50,9),
+                 col.names=c('YearTerm','DegreeLevelCode','EmployeeID'),
+                 colClasses=c('numeric','character','character'))
+ERSD2183 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20183",cc)), 
+                 width = c(-9,5,-39,1,-50,9),
+                 col.names=c('YearTerm','DegreeLevelCode','EmployeeID'),
+                 colClasses=c('numeric','character','character'))
+ERSD2192 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20192",cc)), 
+                 width = c(-9,5,-39,1,-50,9),
+                 col.names=c('YearTerm','DegreeLevelCode','EmployeeID'),
+                 colClasses=c('numeric','character','character'))
+ERSD2193 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20193",cc)), 
+                 width = c(-9,5,-39,1,-50,9),
+                 col.names=c('YearTerm','DegreeLevelCode','EmployeeID'),
+                 colClasses=c('numeric','character','character'))
+ERSD2202 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20202",cc)), 
+                 width = c(-9,5,-39,1,-50,9),
+                 col.names=c('YearTerm','DegreeLevelCode','EmployeeID'),
+                 colClasses=c('numeric','character','character'))
+ERSD2203 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20203",cc)), 
+                 width = c(-9,5,-39,1,-50,9),
+                 col.names=c('YearTerm','DegreeLevelCode','EmployeeID'),
+                 colClasses=c('numeric','character','character'))
+ERSDtotal <- rbind(ERSD2152,ERSD2153,ERSD2162,ERSD2163,ERSD2172,ERSD2173,ERSD2182,ERSD2183,ERSD2192,ERSD2193,ERSD2202,ERSD2203) 
+rm(ERSD2152,ERSD2153,ERSD2162,ERSD2163,ERSD2172,ERSD2173,ERSD2182,ERSD2183,ERSD2192,ERSD2193,ERSD2202,ERSD2203)
+
+# Read in fall 2019 enrollment files for the section B22, one year retention.
+
+ERSS_ret <- read.fwf(file.path(ERSdir, paste0("ERSS\\ERS.PROD.T20194",cc)), 
+                 width = c(-24,1,-1,1,-26,1,1,1,-10,1,-44,3,3,3,-92,1,3,-13,1,-14,9,-56,2),
+                 col.names=c('SexCode','CitizenshipCode','EnrollmentStatus','StudentLevelCode',
+                             'DegreeObjectiveCode','StudentStandingCode','LDunits','UDunits','GradUnits',
+                             'MatriculationType','PreUnits','IPEDSEthnicity','EmployeeID','GenderIdentityCode'),
+                 colClasses=c('character','character','numeric','numeric',
+                              'numeric','character','numeric','numeric','numeric',
+                              'character','numeric','numeric','character','numeric'))
+sERS_ret <- read.fwf(file.path(ERSdir, paste0("sERSS\\SER.PROD.T20194",cc)), 
+                 width = c(-24,1,-1,1,-26,1,1,1,-10,1,-44,3,3,3,-92,1,-16,1,-5,9,-13,3,-46,2),
+                 col.names=c('SexCode','CitizenshipCode','EnrollmentStatus','StudentLevelCode',
+                             'DegreeObjectiveCode','StudentStandingCode','LDunits','UDunits','GradUnits',
+                             'MatriculationType','IPEDSEthnicity','EmployeeID','PreUnits','GenderIdentityCode'),
+                 colClasses=c('character','character','numeric','numeric',
+                              'numeric','character','numeric','numeric','numeric',
+                              'character','numeric','character','numeric','numeric'))
+ERS_ret <- dplyr::bind_rows("R" = ERSS_ret, "E" = sERS_ret, .id = "FileType")
+rm(ERSS_ret, sERS_ret)
+
+# Read in application data for C1 and D2.
+
+ERSAsummer <- read.fwf(file.path(ERSdir, paste0("ERSA\\ERA.PROD.T20203",cc)), 
+                 width = c(-27,1,-43,1,1,-20,1
+                           ,1,-239,9,-54,2),
+                 col.names=c('AdmissionStatus','DegreeObjectiveCode','EnrollmentStatus','SexCode',
+                             'StudentLevelCode','EmployeeID','GenderIdentityCode'),
+                 colClasses=c('character','numeric','numeric','character',
+                              'numeric','character','numeric'))
+ERSAfall <- read.fwf(file.path(ERSdir, paste0("ERSA\\ERA.PROD.T20204",cc)), 
+                 width = c(-27,1,-43,1,1,-20,1
+                           ,1,-239,9,-54,2),
+                 col.names=c('AdmissionStatus','DegreeObjectiveCode','EnrollmentStatus','SexCode',
+                             'StudentLevelCode','EmployeeID','GenderIdentityCode'),
+                 colClasses=c('character','numeric','numeric','character',
+                              'numeric','character','numeric'))
+
+ERSA <- rbind(ERSAsummer, ERSAfall)
+rm(ERSAsummer,ERSAfall)
+
+
+```
+
+# B. ENROLLMENT AND PERSISTENCE
+
+### B1.	Institutional Enrollment - Men and Women
+
+```{r echo=FALSE}
+
+
+# Using the fall enrollment data, Add all units to determine full time part time status.
+
+ERS_Enr <- mutate(ERS_Enr, Units = (PreUnits+LDunits+UDunits+GradUnits)/10)
+ERS_Enr <- 
+  ERS_Enr %>%
+    group_by(EmployeeID) %>% 
+    mutate(TotalUnits=sum(Units))
+
+# Check for students enrolled as state and self.
+
+DupeTable <- data.frame(table(ERS_Enr$EmployeeID))
+#DupeTable[DupeTable$Freq > 1,]  
+
+Check <- ERS_Enr[ERS_Enr$EmployeeID %in% DupeTable$Var1[DupeTable$Freq > 1],14:17]
+#Check[order(Check$EmployeeID),]
+
+#Select records based on Matriculation Type. 
+
+colnames(DupeTable) <- c("EmployeeID","N")
+ERS_Enr <- merge(ERS_Enr, DupeTable, by="EmployeeID")
+
+Singles <- subset(ERS_Enr, N==1)
+Doubles <- subset(ERS_Enr,(N==2 & MatriculationType==FileType))
+rm(ERS_Enr)
+
+ERS_Enr <- rbind(Singles,Doubles)
+rm(DupeTable, Check, Singles, Doubles)
+
+## N in ERS Sex Code needs to be redistributed to either W or M using Gender Identity Code or last digit of ID number.
+
+LastDigID <- strtoi(substr(ERS_Enr$EmployeeID,9,9))
+ERS_Enr <- cbind(ERS_Enr,LastDigID)
+Gender <- recode(ERS_Enr$SexCode, "F"="W", "M"="M")
+ERS_Enr <- cbind(ERS_Enr,Gender)
+rm(LastDigID,Gender)
+CDSsex <- with(ERS_Enr, ifelse(SexCode=="N", 
+                            ifelse(GenderIdentityCode>=14,ifelse(LastDigID%%2==0,"W","M"),
+                                   ifelse(GenderIdentityCode %in% c(10,12),"M","W")) ,Gender))
+ERS_Enr <- cbind(ERS_Enr,CDSsex)
+
+## Recode ethnicity to match the order, then isolate non residents using Citizenship Code.
+
+Ethnicity <- recode(ERS_Enr$IPEDSEthnicity,"7"=2,"2"=3,"1"=4,"3"=5,"4"=6,"5"=7,"6"=8,"8"=9)
+ERS_Enr <-cbind(ERS_Enr,Ethnicity)
+rm(Ethnicity)
+CDSEthnicity <- with(ERS_Enr, ifelse(CitizenshipCode %in% c("F","J","O","N"),1,Ethnicity ))
+
+## Here degree type is defined using Enrollment Status and Student Level Code, and Career based on Level and Degree Objective Code.
+
+CDSdegreeType <- with(ERS_Enr, ifelse(EnrollmentStatus == 5, ifelse(StudentLevelCode < 5,1,5), 
+                                   ifelse(EnrollmentStatus==6, ifelse(StudentLevelCode<5,4,7),
+                                          ifelse(StudentLevelCode==1,2,ifelse(StudentLevelCode==5,6,3)) )))
+CDScareer <- with(ERS_Enr, ifelse(StudentLevelCode < 5 | (DegreeObjectiveCode < 5 & DegreeObjectiveCode > 0), 1, 2))
+ERS_Enr <- cbind(ERS_Enr,CDScareer)
+rm(CDScareer)
+
+FTPT <- with(ERS_Enr, ifelse((CDScareer == 1 & TotalUnits >= 12)|(CDScareer ==2 & TotalUnits >= 9), 'FT', 'PT'))
+B1 <- ftable(CDSdegreeType, FTPT, CDSsex, row.vars = "CDSdegreeType")
+rm(FTPT, CDSsex)
+
+sec1 <- B1[1:3,1:4]
+sec1wt <- rbind(sec1,c(colSums(sec1)))
+sec2 <- rbind(c(colSums(sec1)),B1[4,1:4])
+sec2wt <- rbind(sec2,c(colSums(sec2)))
+sec3 <- B1[5:7,1:4]
+sec3wt <- rbind(sec3,c(colSums(sec3,na.rm = TRUE)))
+sec4 <- colSums(B1)
+rm(B1)
+B1 <- rbind(sec1,sec2wt,sec3wt,sec4)
+rm(sec1, sec1wt, sec2, sec2wt, sec3, sec3wt, sec4)
+
+options(scipen = 999)
+totalUG <- sum(B1[6,1:4])
+totalG <- sum(B1[10,1:4])
+grandTotal <- totalUG + totalG
+rownames(B1) <- c("Degree-seeking, first-time freshman","Degree-seeking, Other first-year","Degree-seeking, Other",
+                     "Total degree-seeking","All other undergraduates","Total Undergraduates",
+                     "Degree-seeking, first-time grad","Degree-seeking, Other grad","All other grad","Total grad","Total all students")
+colnames(B1) <- c("FT Men","FT Women","PT Men","PT Women")
+kable(B1)
+```
+
+Total all undergraduates: `r totalUG`   
+Total all graduate: `r totalG`   
+GRAND TOTAL ALL STUDENTS: `r grandTotal`    
+
+### B2.	Enrollment by Racial/Ethnic Category
+
+```{r echo=FALSE}
+
+# Clean up the data no longer needed.
+rm(totalUG, totalG, grandTotal)
+
+# Use the fields defined above.
+
+B2table <- table(CDSEthnicity, CDSdegreeType) 
+rm(CDSEthnicity, CDSdegreeType)
+
+B2sec2 <- rowSums(B2table[,1:3])
+B2sec3 <- rowSums(B2table[,1:4])
+B2cols <- cbind(B2table[1:9,1],B2sec2,B2sec3)
+B2total <- colSums(B2cols)
+B2 <- rbind(B2cols,B2total)
+rm(B2sec2, B2sec3, B2cols, B2total, B2table)
+
+rownames(B2) <- c("Nonresident aliens","Hispanic/Latino","Black or African American, non-Hispanic","White, non-Hispanic",
+                  "American Indian or Alaska Native, non-Hispanic","Asian, non-Hispanic","Native Hawaiian or other Pacific Islander, non-Hispanic",
+                  "Two or more races, non-Hispanic","Race and/or ethnicity unknown","TOTAL")
+colnames(B2) <- c("Degree-Seeking First-Time First Year","Degree-Seeking Undergraduates","Total Undergraduates")
+
+kable(B2)
+
+```
+
+## Persistence
+### B3.	Number of degrees awarded by your institution from July 1, 2019, to June 30, 2020
+
+```{r echo=FALSE}
+
+rm(B2)
+
+# Using degree data, group degree levels.
+
+Degree <- recode(ERSD$DegreeLevelCode,"2"="BA","3"="BA","4"="BA","5"="MA","6"="MA","7"="MA","8"="Doc")
+B3table <- table(Degree)
+rm(Degree)
+
+ba <- B3table[1]
+ma <- B3table[3]
+dr <- B3table[2]
+rm(B3table)
+
+#### NOTE1: CSUEB does not offer certificates or associate degrees.   
+#### NOTE2: CSUEB offers only one doctoral degree (EDD) and it is considered to be other doctoral degree.  
+
+```
+   
+Certificate/diploma: 0     
+Associate degrees: 0     
+Bachelor's degrees: `r ba`     
+Postbachelor's certificates: 0     
+Master's degrees: `r ma`     
+Post-master's certificates: 0     
+Doctoral degrees - research/scholarship: 0     
+Doctoral degrees - professional practice: 0     
+Doctoral degrees - other:  `r dr`  
+
+
+## B4-B21 Graduation Rates
+### For Bachlor's Programs using Fall 2014 Cohort
+
+```{r echo=FALSE}
+
+rm(ba, ma, dr)
+
+# I will omit the breakdown by Pell grant and Stafford loans. Only the totals are done here. 
+
+
+# select only UG degrees in case a higher degree is earned during the same time frame.
+UGdegrees <- subset(ERSDtotal,DegreeLevelCode < 5)
+
+# match cohort with UG degree records.
+Graduated <- merge(FTFT_Coh,UGdegrees,by="EmployeeID")
+rm(UGdegrees, ERSDtotal)
+
+# check for multiple degrees
+#Graduated[duplicated(Graduated$EmployeeID)]
+
+FourOrless <- with(Graduated, ifelse(YearTerm<=20183,1,0))
+FourToFive <- with(Graduated, ifelse(YearTerm<=20193,ifelse(YearTerm<=20183,0,1),0))
+FiveToSix <- with(Graduated, ifelse(YearTerm<=20203,ifelse(YearTerm<=20193,0,1),0))
+SixOrLess <- with(Graduated, ifelse(YearTerm<=20203,1,0))
+rm(Graduated)
+
+CohortN <- nrow(FTFT_Coh)
+FourOrLessN <- sum(FourOrless)
+FourToFiveN <- sum(FourToFive)
+FiveToSixN <- sum(FiveToSix)
+SixOrLessN <- sum(SixOrLess)
+SixYrGR <- round((SixOrLessN/CohortN)*100,digits = 0)
+rm(FourOrless, FourToFive, FiveToSix, SixOrLess, FTFT_Coh)
+
+```
+
+A. Initial 2014 Cohort of first-time full-time bachelor's degree-seeking undergraduate students: `r CohortN`     
+B. Of the initial 2014 cohort, how many did not persist: 0   
+C. Final 2014 cohort, after adjusting for allowable exclusions: `r CohortN`   
+D. Completed in four years or less: `r FourOrLessN`   
+E. Completed in more than four years but in five years or less: `r FourToFiveN`   
+F. Completed in more than five years but in six years or less: `r FiveToSixN`   
+G. Total graduating within six years: `r SixOrLessN`   
+H. Six year graduation rate: `r SixYrGR`   
+
+## B22 Retention Rates
+### One Year Retention Rate of Fall 2019 full-time bachelor's degree-seeking undergraduate students
+
+```{r echo=FALSE}
+
+rm(CohortN, FourOrLessN, FourToFiveN, FiveToSixN, SixOrLessN, SixYrGR)
+
+# add all the units together.
+ERS_ret <- mutate(ERS_ret, Units = (PreUnits+LDunits+UDunits+GradUnits)/10)
+ERS_ret <- 
+  ERS_ret %>%
+    group_by(EmployeeID) %>% 
+    mutate(TotalUnits=sum(Units))
+
+# Check for students enrolled as state and self.
+
+DupeTable <- data.frame(table(ERS_ret$EmployeeID))
+#DupeTable[DupeTable$Freq > 1,]  
+
+Check <- ERS_ret[ERS_ret$EmployeeID %in% DupeTable$Var1[DupeTable$Freq > 1],12:15]
+#Check[order(Check$EmployeeID),]
+
+#Select records based on Matriculation Type to unduplicate. 
+
+colnames(DupeTable) <- c("EmployeeID","N")
+ERS_ret <- merge(ERS_ret, DupeTable, by="EmployeeID")
+
+Singles <- subset(ERS_ret, N==1)
+Doubles <- subset(ERS_ret,(N==2 & MatriculationType==FileType))
+rm(ERS_ret)
+
+ERS_ret <- rbind(Singles,Doubles)
+rm(DupeTable, Check, Singles, Doubles)
+
+FTFT_ret <- subset(ERS_ret,EnrollmentStatus==5 & StudentLevelCode < 5 & TotalUnits >= 12, select= EmployeeID)
+
+# match Cohort19 with fall 20 enrollment records.
+
+RetainedList <- merge(FTFT_ret,ERS_Enr,by="EmployeeID")
+Retained <- sprintf("%1.0f%%" ,(nrow(RetainedList)/nrow(FTFT_ret))*100)
+rm(RetainedList, FTFT_ret)
+
+```
+
+B22: Percent of fall 2019 cohort enrolled in fall 2020:`r Retained`
+
+### C1.	First-time, first-year (freshman) students: 
+
+```{r echo=FALSE}
+
+rm(Retained)
+
+
+# Using application data, define sex.
+
+LastDigID <- strtoi(substr(ERSA$EmployeeID,9,9))
+ERSA <- cbind(ERSA,LastDigID)
+Gender <- recode(ERSA$SexCode, "F"="W", "M"="M")
+ERSA <- cbind(ERSA,Gender)
+rm(LastDigID,Gender)
+CDSsex <- with(ERSA, ifelse(SexCode=="N", 
+                            ifelse(GenderIdentityCode>=14,ifelse(LastDigID%%2==0,"W","M"),
+                                   ifelse(GenderIdentityCode %in% c(10,12),"M","W")) ,Gender))
+ERSA <- cbind(ERSA,CDSsex)
+rm(CDSsex)
+
+# Group Admission Status.
+
+ERSA$AdmissionStatus <- as.factor(ERSA$AdmissionStatus)
+
+levels(ERSA$AdmissionStatus)<-list(
+                   'Admitted' = c('A','C','F','H','N','P','G'), 
+                   'Not Admitted' = c('D','T','U','J','K') ,
+                   'Incomplete' = c('I','M'),
+                   'No Decision' = c('E','W','Q'))
+
+# select new undergraduate students and exclude incomplete applications.
+
+ERSA <- subset(ERSA, (EnrollmentStatus == 4 | EnrollmentStatus == 5) & StudentLevelCode < 5 & AdmissionStatus != 'Incomplete')
+
+# Define First time freshman (or transfer for Section D2).
+
+# Check they are all degree seeking.
+#table(ERSA$DegreeObjectiveCode)
+
+Freshman_App <- subset(ERSA, EnrollmentStatus == 5)
+Transfer_App <- subset(ERSA, EnrollmentStatus == 4)
+
+
+appliedM <- table(Freshman_App$CDSsex)[1]
+appliedW <- table(Freshman_App$CDSsex)[2]
+admitM <- table(Freshman_App$AdmissionStatus,Freshman_App$CDSsex)[1,1]
+admitW <- table(Freshman_App$AdmissionStatus,Freshman_App$CDSsex)[1,2]
+
+# First time freshman fall enrollment (from Section B).
+
+enrollFTM <- B1[1,1]
+enrollPTM <- B1[1,2]
+enrollFTW <- B1[1,3]
+enrollPTW <- B1[1,4]
+
+```
+
+Total first-time, first-year (freshman) men who applied: `r appliedM` .    
+Total first-time, first-year (freshman) women who applied: `r appliedW` .    
+
+Total first-time, first-year (freshman) men who were admitted: `r admitM` .    
+Total first-time, first-year (freshman) women who were admitted: `r admitW` .    
+
+Total full-time, first-time, first-year (freshman) men who enrolled: `r enrollFTM` .    
+Total part-time, first-time, first-year (freshman) men who enrolled: `r enrollPTM` .    
+
+Total full-time, first-time, first-year (freshman) women who enrolled: `r enrollFTW` .    
+Total part-time, first-time, first-year (freshman) women who enrolled: `r enrollPTW` .  
+ 
+
+## C9-C12: Freshman Profile
+
+### C9. SAT/ACT submission of Fall 2020 first-time, first-year (freshman) students
+
+```{r echo=FALSE}
+
+rm(B1, admitM, admitW, appliedM, appliedW, enrollFTM, enrollFTW, enrollPTM, enrollPTW)
+
+# Number and percent scores submitted.
+
+# Enrolled degree-seeking first time first year freshman.
+
+Freshman_Enr <- subset(ERS_Enr, EnrollmentStatus == 5 & StudentLevelCode < 5)
+Total <- nrow(Freshman_Enr)
+
+# SAT and ACT submissions. I see ACT is 0 and SAT is blank when the scores are missing in our file. So skip na in SAT and 0 in ACT.
+
+satN <- sum(!is.na(Freshman_Enr$SATCompositeScore))
+actN <- colSums(Freshman_Enr != 0, na.rm = TRUE)[17]
+SATpct <- sprintf("%1.0f%%",round((satN/Total)*100))
+ACTpct <- sprintf("%1.0f%%",round((actN/Total)*100))
+SAT <- c(SATpct,satN)
+ACT <- c(ACTpct,actN)
+C9a <- rbind(SAT,ACT)
+colnames(C9a) <- c("Percent","Number")
+rownames(C9a) <- c("Submitting SAT Scores","Submitting ACT Scores")
+rm(Total, satN, actN, SATpct, ACTpct, SAT, ACT)
+
+# SAT and ACT percentiles.
+
+SATcomp <- quantile(Freshman_Enr$SATCompositeScore, c(.25, .75), na.rm = TRUE)
+SATrw <- quantile(Freshman_Enr$SATReadWriteScore, c(.25, .75), na.rm = TRUE)
+SATmath <- quantile(Freshman_Enr$SATMathScore, c(.25, .75), na.rm = TRUE)
+
+ACTcomp <- quantile(Freshman_Enr$ACTCompositeScore[Freshman_Enr$ACTCompositeScore != 0], c(.25, .75))
+ACTmath <- quantile(Freshman_Enr$ACTMathScore[Freshman_Enr$ACTMathScore != 0], c(.25, .75))
+ACTeng <- quantile(Freshman_Enr$ACTEnglishScore[Freshman_Enr$ACTEnglishScore != 0], c(.25, .75))
+ACTwrt <- quantile(Freshman_Enr$ACTWritingScore[Freshman_Enr$ACTWritingScore != 0], c(.25, .75))
+
+C9b <- rbind(SATcomp, SATrw, SATmath, ACTcomp, ACTmath, ACTeng, ACTwrt)  
+colnames(C9b) <- c("25th Percentile","75th Percentile")
+rownames(C9b) <- c("SAT Composite","SAT Reading and Writing","SAT Math","ACT Composite","ACT Math","ACT English","ACT Writing")
+rm(SATcomp, SATrw, SATmath, ACTcomp, ACTmath, ACTeng, ACTwrt)
+
+# SAT Score ranges.
+
+# SAT Reading and Writing and Math score tables are reported in one table.
+
+# Read in SAT scores as frequency tables.
+SATrw <- data.frame(table(cut(Freshman_Enr$SATReadWriteScore,
+               breaks = c(200,299,399,499,599,699,800),
+               labels = c("200-299","300-399","400-499","500-599","600-699","700-800"),
+               include.lowest = TRUE)))
+
+# Add percentages to the contingency table.
+SATrw$Percent <- (SATrw$Freq/sum(SATrw$Freq, na.rm = TRUE))*100
+
+
+SATmath <- data.frame(table(cut(Freshman_Enr$SATMathScore,
+                     breaks = c(200,299,399,499,599,699,800),
+                     labels = c("200-299","300-399","400-499","500-599","600-699","700-800"),
+                     include.lowest = TRUE)))
+SATmath$Percent <- (SATmath$Freq/sum(SATmath$Freq, na.rm = TRUE))*100
+
+# Join reading&writing and math tables together.
+
+SAT1 <- merge(SATrw, SATmath, by="Var1")
+rm(SATrw, SATmath)
+
+# Scores are repoted in descending order.
+
+SAT1 <- SAT1[order(SAT1$Var1, decreasing = TRUE),]
+
+# Add colum totals.
+
+SAT1$Var1 <- as.character(SAT1$Var1)
+SAT1 <- rbind(SAT1, c("Total", colSums(SAT1[,2:5])))
+
+# Format percentages.
+
+SAT1$Percent.x <- sprintf("%.1f%%", as.numeric(SAT1$Percent.x))
+SAT1$Percent.y <- sprintf("%.1f%%", as.numeric(SAT1$Percent.y))
+
+# Remove frequencies as only percentages are needed.
+
+C9c <- SAT1[ -c(2,4) ]
+rm(SAT1)
+
+# Add column labels.
+
+colnames(C9c) <- c("Score Range","SAT Reading and Writing","SAT Math")
+
+
+# SAT Composite score table.
+
+SATcomp <- data.frame(table(cut(Freshman_Enr$SATCompositeScore,
+                     breaks = c(400,599,799,999,1199,1399,1600),
+                     labels = c("400-599","600-799","800-999","1000-1199","1200-1399","1400-1600"),
+                     include.lowest = TRUE)))
+SATcomp$Percent <- (SATcomp$Freq/sum(SATcomp$Freq))*100
+
+SAT2 <- SATcomp[order(SATcomp$Var1, decreasing = TRUE),]
+
+SAT2$Var1 <- as.character(SAT2$Var1)
+SAT2 <- rbind(SAT2, c("Total", colSums(SAT2[ ,c(2:3)])))
+rm(SATcomp)
+
+SAT2$Percent <- sprintf("%.1f%%", as.numeric(SAT2$Percent))
+
+C9d <- SAT2[ -c(2) ]
+rm(SAT2)
+colnames(C9d) <- c("Score Range","SAT Composite")
+
+
+# ACT score range table.
+
+ACT_comp <- data.frame(table(cut(Freshman_Enr$ACTCompositeScore,
+                      breaks = c(1,6,11,17,23,29,36),
+                      labels = c("below 6","6-11","12-17","18-23","24-29","30-36"),
+                      include.lowest = TRUE )))
+ACT_comp$Percent <- (ACT_comp$Freq/sum(ACT_comp$Freq))*100
+
+ACT_Eng <- data.frame(table(cut(Freshman_Enr$ACTEnglishScore,
+                      breaks = c(1,6,11,17,23,29,36),
+                      labels = c("below 6","6-11","12-17","18-23","24-29","30-36"),
+                      include.lowest = TRUE )))
+ACT_Eng$Percent <- (ACT_Eng$Freq/sum(ACT_Eng$Freq))*100
+
+ACT_Math <- data.frame(table(cut(Freshman_Enr$ACTMathScore,
+                      breaks = c(1,6,11,17,23,29,36),
+                      labels = c("below 6","6-11","12-17","18-23","24-29","30-36"),
+                      include.lowest = TRUE )))
+ACT_Math$Percent <- (ACT_Math$Freq/sum(ACT_Math$Freq))*100
+
+# Join the three tables together.
+
+ACT_list <- list(ACT_comp, ACT_Eng, ACT_Math)
+ACT <- Reduce(function(x, y) merge(x, y, by="Var1"), ACT_list, accumulate=FALSE)
+rm(ACT_comp, ACT_Eng, ACT_Math, ACT_list)
+
+# Order the ranges in descending order.
+
+ACT <- ACT[order(ACT$Var1, decreasing = TRUE),]
+
+# Add column totals.
+
+ACT$Var1 <- as.character(ACT$Var1)
+ACT <- rbind(ACT, c("Total", colSums(ACT[ , c(2:7)])))
+
+# Format percentages.
+
+ACT$Percent.x <- sprintf("%.1f%%", as.numeric(ACT$Percent.x))
+ACT$Percent.y <- sprintf("%.1f%%", as.numeric(ACT$Percent.y))
+ACT$Percent <- sprintf("%.1f%%", as.numeric(ACT$Percent))
+
+# Only need to present percentages.
+
+C9e <- ACT[ -c(2,4,6) ]
+rm(ACT)
+
+colnames(C9e) <- c("Score Range","ACT Composite","ACT English","ACT Math")
+
+kable(C9a)
+kable(C9b)
+kable(C9c, row.names = FALSE)
+kable(C9d, row.names = FALSE)
+kable(C9e, row.names = FALSE)
+```
+
+
+### C11. High school GPA distribution.
+
+```{r echo=FALSE}
+
+rm(C9a, C9b, C9c, C9d, C9e)
+
+# Score ranges are up to 5.0.  Not sure how to convert to 4.0 scale. 0 are excluded by making the lowest bound to be 1.
+
+HS_GPA <- data.frame(table(cut(Freshman_Enr$HighSchoolGPA,
+               breaks = c(1,100,199,249,299,324,349,374,399,Inf),
+               labels = c("below 1.00","1.00-1.99","2.00-2.49","2.50-2.99","3.00-3.24","3.25-3.49","3.50-3.74","3.75-3.99"," 4.0+"),
+               include.lowest = TRUE)))
+HS_GPA$Percent <- (HS_GPA$Freq/sum(HS_GPA$Freq))*100
+
+HS_GPA <- HS_GPA[order(HS_GPA$Var1, decreasing = TRUE),]
+
+HS_GPA$Var1 <- as.character(HS_GPA$Var1)
+HS_GPA <- rbind(HS_GPA, c("Total", colSums(HS_GPA[,2:3, drop=FALSE])))
+
+HS_GPA$Percent <- sprintf("%.1f%%", as.numeric(HS_GPA$Percent))
+
+C11 <- HS_GPA[-2]
+rm(HS_GPA)
+colnames(C11) <- c("Range","Percent")
+
+kable(C11, row.names = FALSE)
+```
+   
+
+### C12. Average high school GPA
+
+```{r echo=FALSE}
+
+rm(C11)
+
+HSGPA_vector <- Freshman_Enr$HighSchoolGPA/100
+
+# For the mean calculation, I converted 0 into missing.
+HSGPA_vector[HSGPA_vector ==0] <- NA    
+HSGPA_Mean <- round(mean(HSGPA_vector, na.rm = TRUE ), digits = 2)
+
+HSGPA_Percent <- round((sum(!is.na(HSGPA_vector))/nrow(Freshman_Enr)*100),2)
+
+rm(HSGPA_vector)
+
+```
+Average GPA of all degree-seeking, first-time, first-year (freshman) students: `r HSGPA_Mean`.
+
+Percent of total First-time, first-year (freshman) students who submitted high school GPA: `r HSGPA_Percent`.
+
+## D2. The number of students who applied, were admitted, and enrolled as degree-seeking transfer students
+
+```{r echo=FALSE}
+
+rm(HSGPA_Mean, HSGPA_Percent)
+
+Applicants <-table(Transfer_App$CDSsex)
+Admitted <- table(Transfer_App$CDSsex, Transfer_App$AdmissionStatus)[ ,1]
+
+Transfer_Enr <- subset(ERS_Enr, EnrollmentStatus == 4 & StudentLevelCode < 5)
+Enrolled <- table(Transfer_Enr$CDSsex)
+
+Transfer <- cbind(Applicants,Admitted,Enrolled)
+rm(Applicants, Admitted, Enrolled)
+
+D2 <- rbind(Transfer, colSums(Transfer))
+rm(Transfer, Transfer_App, Transfer_Enr)
+
+rownames(D2) <- c("Men","Women","Total")
+
+kable(D2)
+```
+
+# J. Didsciplinary areas of DEGREES CONFERRED
+
+## J1. Degrees conferred between July 1, 2020 and June 30, 2021
+
+```{r echo=FALSE}
+
+# Using degree data, select only Bachelors degrees.
+
+Bachelors <- subset(ERSD, DegreeLevelCode < 5)
+rm(ERSD)
+
+# Read in COSAR HEGIS CIP Crossover.
+
+CIPlist <- read.fwf(file.path(CIPdir, "commonc-cosarcipcodefxvw-prd-1.csv"),
+                  width = c(5,-1,2,-68,1),
+                  col.names=c('MajorCode','CIPcode','Obsolete'),
+                  colClasses=c('character','character','numeric'))
+
+# Remove Obsolete codes.
+
+CIPxOver <- subset(CIPlist, Obsolete == 0, select = c('MajorCode','CIPcode'))
+rm(CIPlist)
+
+# Read in CDS CIP Category names.
+
+CIPcategory <- read.csv(file.path(CIPdir, "CIPCategory.csv"))
+
+# Join the category names to CIP Code.
+
+CIP <- merge(CIPxOver, CIPcategory, by="CIPcode")
+rm(CIPxOver)
+
+# Join the CIP code to degree file.
+
+ERSD <- merge(Bachelors, CIP, by="MajorCode")
+
+# Save the frequencies.
+
+J <- data.frame(table(ERSD$Category))
+rm(ERSD)
+
+# Calculate the percent and add total.
+
+J$percent <- (J$Freq/(sum(J$Freq)))*100
+J$Var1 <- as.character(J$Var1)
+J <- rbind(J, c("Total", colSums(J[,2:3, drop=FALSE])))
+J$percent <- sprintf("%.1f%%", as.numeric(J$percent))
+colnames(J) <- c("Category","Number","Bachelors")
+
+# Reattach CIP Codes.
+
+Jtable <- merge(J, CIPcategory, by="Category", all=TRUE)
+rm(J, CIPcategory)
+
+DegreeTable = subset(Jtable, select = -c(Number))
+DegreeTable <-DegreeTable[order(DegreeTable$CIPcode, DegreeTable$Category),]
+row.names(DegreeTable) <- NULL
+rm(Jtable)
+
+kable(DegreeTable)
+
+```
