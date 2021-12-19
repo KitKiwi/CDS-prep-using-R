@@ -39,7 +39,7 @@ cc <- "05"
 
 # Save the following two files for CIP codes in Section J, 
 #    commonc-cosarcipcodefxvw-prd-1.csv and
-#    CIPCategory20-21.csv
+#    CIPCategory.csv
 # and create a reference for the directory.
 
 CIPdir <- file.path("K:\\My Drive\\AAprojects\\CDSusingR")
