@@ -49,7 +49,8 @@ CIPdir <- file.path("K:\\My Drive\\AAprojects\\CDSusingR")
 
 ```{r include=FALSE}
 
-# Read in fall ERS state and self files for the enrollment sections, B1 and B2. The data are also used to find 2019 freshmen retention in section B22 and freshman profile, C9-C12. 
+# Read in fall ERS files for the enrollment sections, B1 and B2. The data are also used to find 2019 freshmen retention in section B22 and freshman profile, C9-C12. 
+# I added self support students following the IPEDS guideline.
 
 ERSS <- read.fwf(file.path(ERSdir, paste0("ERSS\\ERS.PROD.T20204",cc)), 
                  width = c(-24,1,-1,1,-13,6,-7,1,
@@ -70,7 +71,6 @@ ERSS <- read.fwf(file.path(ERSdir, paste0("ERSS\\ERS.PROD.T20204",cc)),
                               'numeric','numeric','numeric','character',
                               'numeric','numeric','character','numeric',
                               'numeric','numeric','numeric'))
-
 
 sERS <- read.fwf(file.path(ERSdir, paste0("sERSS\\SER.PROD.T20204",cc)), 
                  width = c(-24,1,-1,1,-13,6,-7,1,
@@ -94,7 +94,9 @@ sERS <- read.fwf(file.path(ERSdir, paste0("sERSS\\SER.PROD.T20204",cc)),
 ERS_Enr <- dplyr::bind_rows("R" = ERSS, "E" = sERS, .id = "FileType")
 rm(ERSS,sERS)
 
+
 # Read in degree data for total degrees conferred, B3, and by CIP codes, J.
+# East Bay combines fall degree data into spring file. If you have a separate file for fall, you'll need to add it here.
 
 ERSDsummer <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20203",cc)), 
                  width = c(-53,1,5),
@@ -108,7 +110,6 @@ ERSD <- rbind(ERSDsummer,ERSDfall_spring)
 rm(ERSDsummer, ERSDfall_spring)
 
 
-
 # Read 2014 enrollment data to define cohort for graduation rates in section B4.
 # Chancellor's Office did not include self-support students for GI2025 2014 cohort, so I use the state side only.
 
@@ -120,11 +121,15 @@ ERSS_Coh <- read.fwf(file.path(ERSdir, paste0("ERSS\\ERS.PROD.T20144",cc)),
                               'numeric','numeric','numeric','numeric','character'))
 ERSS_Coh <- mutate(ERSS_Coh, TotalUnits = (PreUnits+LDunits+UDunits+GradUnits)/10)
 
+
 # Select first time full time undergraduate students from the cohort data.
+
 FTFT_Coh <- subset(ERSS_Coh,EnrollmentStatus==5 & StudentLevelCode < 5 & TotalUnits >= 12, select = EmployeeID)
 rm(ERSS_Coh)
 
+
 # For 4,5,6 year graduation records, read in fall 2014 through summer 2020 data.
+# Again, make sure to add fall degree data if your campus files it separately.
 
 ERSD2152 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20152",cc)), 
                  width = c(-9,5,-39,1,-50,9),
@@ -177,6 +182,7 @@ ERSD2203 <- read.fwf(file.path(ERSdir, paste0("ERSD\\ERD.PROD.T20203",cc)),
 ERSDtotal <- rbind(ERSD2152,ERSD2153,ERSD2162,ERSD2163,ERSD2172,ERSD2173,ERSD2182,ERSD2183,ERSD2192,ERSD2193,ERSD2202,ERSD2203) 
 rm(ERSD2152,ERSD2153,ERSD2162,ERSD2163,ERSD2172,ERSD2173,ERSD2182,ERSD2183,ERSD2192,ERSD2193,ERSD2202,ERSD2203)
 
+
 # Read in fall 2019 enrollment files for the section B22, one year retention.
 
 ERSS_ret <- read.fwf(file.path(ERSdir, paste0("ERSS\\ERS.PROD.T20194",cc)), 
@@ -197,6 +203,7 @@ sERS_ret <- read.fwf(file.path(ERSdir, paste0("sERSS\\SER.PROD.T20194",cc)),
                               'character','numeric','character','numeric','numeric'))
 ERS_ret <- dplyr::bind_rows("R" = ERSS_ret, "E" = sERS_ret, .id = "FileType")
 rm(ERSS_ret, sERS_ret)
+
 
 # Read in application data for C1 and D2.
 
@@ -450,8 +457,7 @@ Doctoral degrees - other:  `r dr`
 
 rm(ba, ma, dr)
 
-# I will omit the breakdown by Pell grant and Stafford loans. Only the totals are done here. 
-
+# I will omit the breakdown by Pell grant and Stafford loans, as they are not available from ERS files. 
 
 # select only UG degrees in case a higher degree is earned during the same time frame.
 UGdegrees <- subset(ERSDtotal,DegreeLevelCode < 5)
