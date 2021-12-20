@@ -1137,7 +1137,7 @@ Number: 90
 
 ### D18. Does your institution accept the following military/veteran transfer credits:
 
-Institution                                     |     Yes    |     No    
+Credits from:                                   |     Yes    |     No    
 ------------------------------------------------|------------|------------
 American Council on Education (ACE)             |     x      |    
 College Level Examination Program (CLEP)        |     x      |     
